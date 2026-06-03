@@ -1,7 +1,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import type { Socket } from 'node:net';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-middleware';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import type * as http from 'node:http';
 
 interface DevConfig {
   proxyPort?: number;
@@ -23,7 +26,6 @@ async function loadConfig(): Promise<DevConfig> {
     if (!parsed.local || typeof parsed.local !== 'object') {
       parsed.local = {};
     }
-    // Filter ud "_" beskrivelses-felter
     parsed.local = Object.fromEntries(
       Object.entries(parsed.local).filter(([k, v]) => !k.startsWith('_') && (typeof v === 'number' || typeof v === 'string') && String(v).length > 0),
     );
@@ -68,20 +70,22 @@ async function main(): Promise<void> {
       changeOrigin: true,
       ws: true,
       pathRewrite: { [`^/remotes/${name}`]: '' },
-      onProxyReq: () => undefined,
-      onError: (err, req, res) => {
-        const r = res as Response;
-        if (verbose) console.error(`[nexus-proxy] LOCAL ${name} unreachable at ${target}: ${err.message}`);
-        if (!r.headersSent) {
-          r.status(502).json({
-            error: 'local_remote_unreachable',
-            remote: name,
-            target,
-            message: err.message,
-          });
-        }
+      on: {
+        error: (err: Error, _req: IncomingMessage, res: ServerResponse | Socket) => {
+          if (verbose) console.error(`[nexus-proxy] LOCAL ${name} unreachable at ${target}: ${err.message}`);
+          const httpRes = res as ServerResponse;
+          if (httpRes && !httpRes.headersSent && typeof httpRes.writeHead === 'function') {
+            httpRes.writeHead(502, { 'Content-Type': 'application/json' });
+            httpRes.end(JSON.stringify({
+              error: 'local_remote_unreachable',
+              remote: name,
+              target,
+              message: err.message,
+            }));
+          }
+        },
       },
-    } as ProxyOptions);
+    });
     app.use(route, (req, res, next) => {
       if (verbose) logRoute(`LOCAL ${name}`, target, req);
       proxy(req, res, next);
@@ -95,26 +99,28 @@ async function main(): Promise<void> {
     target: sharedTarget,
     changeOrigin: true,
     ws: true,
-    onProxyReq: (proxyReq, req) => {
-      // Videresend X-Nexus-Token og X-Request-ID hvis sat
-      const incomingToken = req.headers['x-nexus-token'];
-      if (incomingToken) proxyReq.setHeader('X-Nexus-Token', String(incomingToken));
-      const incomingReqId = req.headers['x-request-id'];
-      if (incomingReqId) proxyReq.setHeader('X-Request-ID', String(incomingReqId));
+    on: {
+      proxyReq: (proxyReq: http.ClientRequest, req: IncomingMessage) => {
+        const incomingToken = req.headers['x-nexus-token'];
+        if (incomingToken) proxyReq.setHeader('X-Nexus-Token', String(incomingToken));
+        const incomingReqId = req.headers['x-request-id'];
+        if (incomingReqId) proxyReq.setHeader('X-Request-ID', String(incomingReqId));
+      },
+      error: (err: Error, req: IncomingMessage, res: ServerResponse | Socket) => {
+        if (verbose) console.error(`[nexus-proxy] SHARED ${sharedTarget} unreachable: ${err.message}`);
+        const httpRes = res as ServerResponse;
+        if (httpRes && !httpRes.headersSent && typeof httpRes.writeHead === 'function') {
+          httpRes.writeHead(502, { 'Content-Type': 'application/json' });
+          httpRes.end(JSON.stringify({
+            error: 'shared_environment_unreachable',
+            target: sharedTarget,
+            message: err.message,
+            path: req.url,
+          }));
+        }
+      },
     },
-    onError: (err, req, res) => {
-      const r = res as Response;
-      if (verbose) console.error(`[nexus-proxy] SHARED ${sharedTarget} unreachable: ${err.message}`);
-      if (!r.headersSent) {
-        r.status(502).json({
-          error: 'shared_environment_unreachable',
-          target: sharedTarget,
-          message: err.message,
-          path: req.url,
-        });
-      }
-    },
-  } as ProxyOptions);
+  });
 
   app.use((req, res, next) => {
     if (verbose) logRoute('SHARED', sharedTarget, req);
@@ -138,8 +144,9 @@ async function main(): Promise<void> {
   });
 
   // Hot reload for WebSocket-forbindelser (Nexus broadcast etc)
+  // Node 22+ types use Duplex for socket; http-proxy-middleware expects net.Socket — cast.
   server.on('upgrade', (req, socket, head) => {
-    sharedProxy.upgrade?.(req, socket, head);
+    sharedProxy.upgrade?.(req, socket as Socket, head);
   });
 }
 
