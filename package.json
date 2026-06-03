@@ -1,8 +1,8 @@
 {
-  "name": "@nexus/dev-proxy",
+  "name": "nexus-proxy",
   "version": "1.0.0",
   "private": true,
-  "description": "Developer proxy: kør én remote lokalt og proxy resten til shared environment",
+  "description": "Nexus developer proxy — run one remote locally with hot reload, proxy rest to shared env",
   "scripts": {
     "start": "tsx proxy-server.ts",
     "type-check": "tsc --noEmit"
