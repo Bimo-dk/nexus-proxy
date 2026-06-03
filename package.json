@@ -1,0 +1,20 @@
+{
+  "name": "@nexus/dev-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Developer proxy: kør én remote lokalt og proxy resten til shared environment",
+  "scripts": {
+    "start": "tsx proxy-server.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.0.1",
+    "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
