@@ -1,43 +1,43 @@
 # Nexus Developer Proxy
 
-Kør én Nexus remote lokalt med hot reload — proxy alt andet (host, andre remotes, registry) til shared dev/staging-miljø.
+Run one Nexus remote locally with hot reload — proxy everything else (host, other remotes, registry) to a shared dev/staging environment.
 
 ## Quick start
 
 ```bash
-# 1. Klon projektet
+# 1. Clone the project
 git clone <repo>
 cd nexus
 
-# 2. Start arbejdet på en specifik remote — én kommando:
+# 2. Start work on a specific remote — one command:
 npm run dev:remote-one
 
-# 3. Åbn browseren
-# http://localhost:9000   ← proxy (peg din browser hertil)
+# 3. Open the browser
+# http://localhost:9000   -> proxy (point your browser here)
 ```
 
-Det er det. Ingen Docker, ingen lokal registry, ingen andre remotes startes lokalt.
+That's it. No Docker, no local registry, no other remotes started locally.
 
-## Hvad sker der bag kulisserne
+## What happens behind the scenes
 
-`npm run dev:remote-one` gør:
+`npm run dev:remote-one` does:
 
-1. Skifter `local` sektionen i `nexus.dev.json` til `{ "remoteOne": 8666 }`
-2. Starter `ng serve` for remote-one på port 8666 (med hot reload)
-3. Starter proxy-serveren på port 9000
+1. Sets the `local` section in `nexus.dev.json` to `{ "remoteOne": 8666 }`
+2. Starts `ng serve` for remote-one on port 8666 (with hot reload)
+3. Starts the proxy server on port 9000
 
-Proxy-serveren router:
+The proxy server routes:
 
-| URL-prefix | Destination |
+| URL prefix | Destination |
 |---|---|
-| `/remotes/remoteOne/*` | http://localhost:8666 (lokal med HMR) |
+| `/remotes/remoteOne/*` | http://localhost:8666 (local with HMR) |
 | `/host/*` | shared env |
 | `/remotes/remoteTwo/*` | shared env |
 | `/api/*` | shared env (Nexus registry) |
 | `/ws` | shared env (Nexus WebSocket broadcast) |
-| Alt andet | shared env (app shell) |
+| Everything else | shared env (app shell) |
 
-## Konfiguration: `nexus.dev.json`
+## Configuration: `nexus.dev.json`
 
 ```json
 {
@@ -52,46 +52,46 @@ Proxy-serveren router:
 }
 ```
 
-| Felt | Beskrivelse |
+| Field | Description |
 |---|---|
-| `proxyPort` | Port hvor proxyen lytter. Default 9000. |
-| `local` | Map af `<remote-navn>` → `<lokal port>`. Alle her bypasses shared env. |
-| `remote.url` | Shared environment URL — som regel app's offentlige URL. |
-| `logRouting` | True for at logge hvert request's destination. |
+| `proxyPort` | Port the proxy listens on. Default 9000. |
+| `local` | Map of `<remote-name>` -> `<local port>`. All entries here bypass the shared env. |
+| `remote.url` | Shared environment URL — usually app's public URL. |
+| `logRouting` | True to log each request's destination. |
 
-## Pege mod et delt staging-miljø
+## Pointing at a shared staging environment
 
-Skift `remote.url` til staging-URL'en:
+Change `remote.url` to the staging URL:
 
 ```json
 {
-  "remote": { "url": "https://nexus-staging.dintid.dk" }
+  "remote": { "url": "https://nexus-staging.yourdomain.com" }
 }
 ```
 
-Nu ser du staging-data + dine lokale ændringer i én browser.
+Now you see staging data + your local changes in one browser.
 
 ## Hot reload
 
-Når du redigerer kode i den lokalt-kørende remote (fx `remote-one/src/...`), genstarter Angular dev-serveren automatisk. Proxy-serveren behøver ikke restart — den læser ikke filerne, kun route-konfigurationen.
+When you edit code in the locally running remote (e.g. `remote-one/src/...`), the Angular dev server restarts automatically. The proxy server does not need a restart — it does not read the files, only the route configuration.
 
-Ændringer i andre remotes på det delte miljø ses ved næste navigation — host's WebSocket-forbindelse til shared registry's `/ws` modtager broadcast og opdaterer routes uden refresh.
+Changes in other remotes on the shared environment are seen on the next navigation — the host's WebSocket connection to the shared registry's `/ws` receives the broadcast and updates routes without refresh.
 
 ## Debugging
 
-Proxyen logger hver request hvis `logRouting: true`:
+The proxy logs each request when `logRouting: true`:
 
 ```
-[nexus-proxy] GET    /remotes/remoteOne/remoteEntry.json     → LOCAL remoteOne (http://localhost:8666)
-[nexus-proxy] GET    /host/remoteEntry.json                  → SHARED (http://localhost:8668)
-[nexus-proxy] POST   /api/remotes                            → SHARED (http://localhost:8668)
+[nexus-proxy] GET    /remotes/remoteOne/remoteEntry.json     -> LOCAL remoteOne (http://localhost:8666)
+[nexus-proxy] GET    /host/remoteEntry.json                  -> SHARED (http://localhost:8668)
+[nexus-proxy] POST   /api/remotes                            -> SHARED (http://localhost:8668)
 ```
 
-Ved fejl mod shared env returneres en tydelig 502 med fejlbeskeden — proxyen crasher ikke.
+On errors against the shared env, a clear 502 with the error message is returned — the proxy does not crash.
 
-## Tilføj en ny `dev:remote-X` script
+## Add a new `dev:remote-X` script
 
-I rod-`package.json`:
+In the root `package.json`:
 
 ```json
 "scripts": {

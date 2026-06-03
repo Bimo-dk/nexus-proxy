@@ -37,7 +37,7 @@ async function loadConfig(): Promise<DevConfig> {
 }
 
 function logRoute(label: string, target: string, req: Request): void {
-  console.log(`[nexus-proxy] ${req.method.padEnd(6)} ${req.url.padEnd(40)} → ${label} (${target})`);
+  console.log(`[nexus-proxy] ${req.method.padEnd(6)} ${req.url.padEnd(40)} -> ${label} (${target})`);
 }
 
 async function main(): Promise<void> {
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     next();
   });
 
-  // ----- LOKALE remotes (mounted FØR shared remote-catch-all) -----
+  // ----- LOCAL remotes (mounted BEFORE shared remote-catch-all) -----
   for (const [name, portValue] of Object.entries(config.local)) {
     const localPort = Number(portValue);
     const target = `http://localhost:${localPort}`;
@@ -90,10 +90,10 @@ async function main(): Promise<void> {
       if (verbose) logRoute(`LOCAL ${name}`, target, req);
       proxy(req, res, next);
     });
-    console.log(`[nexus-proxy] LOCAL  /remotes/${name}/* → ${target}`);
+    console.log(`[nexus-proxy] LOCAL  /remotes/${name}/* -> ${target}`);
   }
 
-  // ----- SHARED environment (alt andet) -----
+  // ----- SHARED environment (everything else) -----
   const sharedTarget = config.remote.url.replace(/\/$/, '');
   const sharedProxy = createProxyMiddleware({
     target: sharedTarget,
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
     sharedProxy(req, res, next);
   });
 
-  // ----- Start lytter -----
+  // ----- Start listener -----
   const server = app.listen(port, () => {
     console.log('');
     console.log(`╭───────────────────────────────────────────────────────────`);
@@ -135,15 +135,15 @@ async function main(): Promise<void> {
     console.log(`├───────────────────────────────────────────────────────────`);
     console.log(`│  Listening:  http://localhost:${port}`);
     console.log(`│  Shared:     ${sharedTarget}`);
-    console.log(`│  Local:      ${Object.keys(config.local).length === 0 ? '(none — alt proxyes til shared)' : ''}`);
+    console.log(`│  Local:      ${Object.keys(config.local).length === 0 ? '(none — all proxied to shared)' : ''}`);
     for (const [name, p] of Object.entries(config.local)) {
-      console.log(`│    /remotes/${name}/* → http://localhost:${p}`);
+      console.log(`│    /remotes/${name}/* -> http://localhost:${p}`);
     }
     console.log(`╰───────────────────────────────────────────────────────────`);
     console.log('');
   });
 
-  // Hot reload for WebSocket-forbindelser (Nexus broadcast etc)
+  // Hot reload for WebSocket connections (Nexus broadcast etc)
   // Node 22+ types use Duplex for socket; http-proxy-middleware expects net.Socket — cast.
   server.on('upgrade', (req, socket, head) => {
     sharedProxy.upgrade?.(req, socket as Socket, head);
