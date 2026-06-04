@@ -16,6 +16,12 @@ interface DevConfig {
   logRouting?: boolean;
 }
 
+interface RegistryRemote {
+  name: string;
+  routePath: string;
+  upstreamUrl?: string;
+}
+
 const CONFIG_PATH = path.resolve(process.cwd(), 'nexus.dev.json');
 
 async function loadConfig(): Promise<DevConfig> {
@@ -40,10 +46,29 @@ function logRoute(label: string, target: string, req: Request): void {
   console.log(`[nexus-proxy] ${req.method.padEnd(6)} ${req.url.padEnd(40)} -> ${label} (${target})`);
 }
 
+async function fetchRegistryRemotes(registryBase: string, token?: string): Promise<RegistryRemote[]> {
+  const headers: Record<string, string> = {};
+  if (token) headers['X-Nexus-Token'] = token;
+  try {
+    const res = await fetch(`${registryBase}/remotes`, { headers });
+    if (!res.ok) return [];
+    const data = await res.json() as { remotes?: RegistryRemote[] };
+    return Array.isArray(data.remotes) ? data.remotes : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildRemoteNames(remotes: RegistryRemote[]): Set<string> {
+  return new Set(remotes.map(r => r.name));
+}
+
 async function main(): Promise<void> {
   const config = await loadConfig();
   const port = config.proxyPort ?? 9000;
   const verbose = config.logRouting !== false;
+  const sharedTarget = config.remote.url.replace(/\/$/, '');
+  const registryBase = `${sharedTarget}${config.remote.registryApiPath ?? '/api'}`;
 
   const app = express();
 
@@ -94,7 +119,6 @@ async function main(): Promise<void> {
   }
 
   // ----- SHARED environment (everything else) -----
-  const sharedTarget = config.remote.url.replace(/\/$/, '');
   const sharedProxy = createProxyMiddleware({
     target: sharedTarget,
     changeOrigin: true,
@@ -128,6 +152,9 @@ async function main(): Promise<void> {
   });
 
   // ----- Start listener -----
+  const initialRemotes = await fetchRegistryRemotes(registryBase);
+  let knownRemoteNames = buildRemoteNames(initialRemotes);
+
   const server = app.listen(port, () => {
     console.log('');
     console.log(`╭───────────────────────────────────────────────────────────`);
@@ -135,16 +162,42 @@ async function main(): Promise<void> {
     console.log(`├───────────────────────────────────────────────────────────`);
     console.log(`│  Listening:  http://localhost:${port}`);
     console.log(`│  Shared:     ${sharedTarget}`);
+    console.log(`│  Registry:   ${registryBase}`);
     console.log(`│  Local:      ${Object.keys(config.local).length === 0 ? '(none — all proxied to shared)' : ''}`);
     for (const [name, p] of Object.entries(config.local)) {
       console.log(`│    /remotes/${name}/* -> http://localhost:${p}`);
+    }
+    if (initialRemotes.length > 0) {
+      console.log(`│  Registry remotes:`);
+      const localNames = new Set(Object.keys(config.local));
+      for (const r of initialRemotes) {
+        const overridden = localNames.has(r.name) ? ' (overridden locally)' : '';
+        console.log(`│    ${r.name}${overridden}`);
+      }
+    } else {
+      console.log(`│  Registry:   (no remotes registered or registry unreachable)`);
     }
     console.log(`╰───────────────────────────────────────────────────────────`);
     console.log('');
   });
 
-  // Hot reload for WebSocket connections (Nexus broadcast etc)
-  // Node 22+ types use Duplex for socket; http-proxy-middleware expects net.Socket — cast.
+  // Poll registry for new remotes and log them for developer awareness
+  setInterval(async () => {
+    const remotes = await fetchRegistryRemotes(registryBase);
+    const currentNames = buildRemoteNames(remotes);
+    const localNames = new Set(Object.keys(config.local));
+
+    for (const name of currentNames) {
+      if (!knownRemoteNames.has(name)) {
+        const override = localNames.has(name) ? ' (overridden locally)' : ' — add to local block to develop locally';
+        console.log(`[nexus-proxy] New remote registered: ${name}${override}`);
+      }
+    }
+
+    knownRemoteNames = currentNames;
+  }, 15_000);
+
+  // Hot reload for WebSocket connections
   server.on('upgrade', (req, socket, head) => {
     sharedProxy.upgrade?.(req, socket as Socket, head);
   });
