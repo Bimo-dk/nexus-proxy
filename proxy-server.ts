@@ -12,6 +12,7 @@ interface DevConfig {
   remote: {
     url: string;
     registryApiPath?: string;
+    nexusToken?: string;
   };
   logRouting?: boolean;
 }
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
   const verbose = config.logRouting !== false;
   const sharedTarget = config.remote.url.replace(/\/$/, '');
   const registryBase = `${sharedTarget}${config.remote.registryApiPath ?? '/api'}`;
+  const nexusToken = config.remote.nexusToken ?? process.env.NEXUS_TOKEN;
 
   const app = express();
 
@@ -152,7 +154,7 @@ async function main(): Promise<void> {
   });
 
   // ----- Start listener -----
-  const initialRemotes = await fetchRegistryRemotes(registryBase);
+  const initialRemotes = await fetchRegistryRemotes(registryBase, nexusToken);
   let knownRemoteNames = buildRemoteNames(initialRemotes);
 
   const server = app.listen(port, () => {
@@ -183,7 +185,7 @@ async function main(): Promise<void> {
 
   // Poll registry for new remotes and log them for developer awareness
   setInterval(async () => {
-    const remotes = await fetchRegistryRemotes(registryBase);
+    const remotes = await fetchRegistryRemotes(registryBase, nexusToken);
     const currentNames = buildRemoteNames(remotes);
     const localNames = new Set(Object.keys(config.local));
 
