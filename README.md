@@ -2,6 +2,8 @@
 
 Run one Nexus remote locally with hot reload — proxy everything else (host, other remotes, registry) to a shared dev/staging environment.
 
+> **Most users should reach for [`bnx dev`](../nexus-packages/packages/cli/) instead.** It wraps this proxy with autostart, gate impersonation, and a friendlier config file (`nexus.config.json`). See [docs/workflows/dev-mode](../nexus/docs/workflows/dev-mode.md). The instructions below are the low-level interface that `bnx dev` builds on top of.
+
 ## Quick start
 
 ```bash
